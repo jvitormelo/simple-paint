@@ -22,8 +22,10 @@ import {
 import {
   findObjectAtPoint,
   findHandleAtPoint,
+  findObjectsInRect,
   getBoundingBox,
   getResizeCursor,
+  type Rect,
 } from '../hit-testing'
 import {
   renderAllObjects,
@@ -35,7 +37,7 @@ interface CanvasProps {
   onExportRef: React.MutableRefObject<(() => void) | null>
 }
 
-type DragMode = 'none' | 'drawing' | 'moving' | 'resizing'
+type DragMode = 'none' | 'drawing' | 'moving' | 'resizing' | 'selecting'
 
 export function Canvas({ onExportRef }: CanvasProps) {
   const mainCanvasRef = useRef<HTMLCanvasElement>(null)
@@ -54,10 +56,10 @@ export function Canvas({ onExportRef }: CanvasProps) {
   const [resizeHandle, setResizeHandle] = useState<HandlePosition | null>(null)
   const [textInput, setTextInput] = useState<{ x: number; y: number } | null>(null)
   const [cursor, setCursor] = useState('default')
+  const [selectionRect, setSelectionRect] = useState<Rect | null>(null)
 
-  const selectedObject = selectedIds.length === 1
-    ? objects.find((o) => o.id === selectedIds[0]) ?? null
-    : null
+  const selectedObjects = objects.filter((o) => selectedIds.includes(o.id))
+  const selectedObject = selectedIds.length === 1 ? selectedObjects[0] ?? null : null
 
   // Resize canvas to fill container and re-render
   useEffect(() => {
@@ -93,7 +95,7 @@ export function Canvas({ onExportRef }: CanvasProps) {
     }
   }, [objects])
 
-  // Render overlay (selection handles + active drawing)
+  // Render overlay (selection handles + active drawing + selection rect)
   useEffect(() => {
     const ctx = overlayCanvasRef.current?.getContext('2d')
     if (!ctx) return
@@ -104,10 +106,29 @@ export function Canvas({ onExportRef }: CanvasProps) {
       renderActiveDrawing(ctx, activeObject)
     }
 
-    if (selectedObject && dragMode !== 'drawing') {
-      renderSelectionHandles(ctx, selectedObject)
+    // Draw selection rectangle while selecting
+    if (selectionRect && dragMode === 'selecting') {
+      ctx.save()
+      ctx.strokeStyle = '#0066ff'
+      ctx.fillStyle = 'rgba(0, 102, 255, 0.1)'
+      ctx.lineWidth = 1
+      ctx.setLineDash([4, 4])
+      const x = selectionRect.width < 0 ? selectionRect.x + selectionRect.width : selectionRect.x
+      const y = selectionRect.height < 0 ? selectionRect.y + selectionRect.height : selectionRect.y
+      const w = Math.abs(selectionRect.width)
+      const h = Math.abs(selectionRect.height)
+      ctx.fillRect(x, y, w, h)
+      ctx.strokeRect(x, y, w, h)
+      ctx.restore()
     }
-  }, [activeObject, selectedObject, dragMode])
+
+    // Draw selection handles for all selected objects
+    if (selectedObjects.length > 0 && dragMode !== 'drawing') {
+      for (const obj of selectedObjects) {
+        renderSelectionHandles(ctx, obj)
+      }
+    }
+  }, [activeObject, selectedObjects, dragMode, selectionRect])
 
   // Export function
   onExportRef.current = useCallback(() => {
@@ -135,7 +156,7 @@ export function Canvas({ onExportRef }: CanvasProps) {
     setDragStart(point)
 
     if (activeTool === 'select') {
-      // Check if clicking on a resize handle of selected object
+      // Check if clicking on a resize handle of selected object (only for single selection)
       if (selectedObject) {
         const handle = findHandleAtPoint(point, selectedObject)
         if (handle) {
@@ -148,10 +169,19 @@ export function Canvas({ onExportRef }: CanvasProps) {
       // Check if clicking on an object
       const clickedObject = findObjectAtPoint(point, objects)
       if (clickedObject) {
-        setSelection([clickedObject.id])
-        setDragMode('moving')
+        // If clicking on an already selected object, start moving all selected
+        if (selectedIds.includes(clickedObject.id)) {
+          setDragMode('moving')
+        } else {
+          // Select the new object
+          setSelection([clickedObject.id])
+          setDragMode('moving')
+        }
       } else {
+        // Start marquee selection
         clearSelection()
+        setDragMode('selecting')
+        setSelectionRect({ x: point.x, y: point.y, width: 0, height: 0 })
       }
       return
     }
@@ -208,16 +238,30 @@ export function Canvas({ onExportRef }: CanvasProps) {
 
     if (!dragStart || dragMode === 'none') return
 
-    if (dragMode === 'moving' && selectedObject) {
+    // Update selection rectangle
+    if (dragMode === 'selecting') {
+      setSelectionRect({
+        x: dragStart.x,
+        y: dragStart.y,
+        width: point.x - dragStart.x,
+        height: point.y - dragStart.y,
+      })
+      return
+    }
+
+    // Move all selected objects
+    if (dragMode === 'moving' && selectedObjects.length > 0) {
       const dx = point.x - dragStart.x
       const dy = point.y - dragStart.y
-      updateObject(selectedObject.id, {
-        x: selectedObject.x + dx,
-        y: selectedObject.y + dy,
-        ...(selectedObject.type === 'line' || selectedObject.type === 'arrow'
-          ? { endX: selectedObject.endX + dx, endY: selectedObject.endY + dy }
-          : {}),
-      } as Partial<CanvasObject>)
+      for (const obj of selectedObjects) {
+        updateObject(obj.id, {
+          x: obj.x + dx,
+          y: obj.y + dy,
+          ...(obj.type === 'line' || obj.type === 'arrow'
+            ? { endX: obj.endX + dx, endY: obj.endY + dy }
+            : {}),
+        } as Partial<CanvasObject>)
+      }
       setDragStart(point)
       return
     }
@@ -333,6 +377,14 @@ export function Canvas({ onExportRef }: CanvasProps) {
       } else {
         addObject({ ...activeObject, id: crypto.randomUUID() })
       }
+    }
+
+    if (dragMode === 'selecting' && selectionRect) {
+      const foundObjects = findObjectsInRect(selectionRect, objects)
+      if (foundObjects.length > 0) {
+        setSelection(foundObjects.map((o) => o.id))
+      }
+      setSelectionRect(null)
     }
 
     if (dragMode === 'moving' || dragMode === 'resizing') {

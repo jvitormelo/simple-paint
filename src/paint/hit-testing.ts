@@ -109,3 +109,37 @@ export function getResizeCursor(handle: HandlePosition): string {
   }
   return cursors[handle]
 }
+
+export interface Rect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+function normalizeRect(rect: Rect): Rect {
+  return {
+    x: rect.width < 0 ? rect.x + rect.width : rect.x,
+    y: rect.height < 0 ? rect.y + rect.height : rect.y,
+    width: Math.abs(rect.width),
+    height: Math.abs(rect.height),
+  }
+}
+
+function rectsIntersect(a: Rect, b: Rect): boolean {
+  const aNorm = normalizeRect(a)
+  const bNorm = normalizeRect(b)
+  return (
+    aNorm.x < bNorm.x + bNorm.width &&
+    aNorm.x + aNorm.width > bNorm.x &&
+    aNorm.y < bNorm.y + bNorm.height &&
+    aNorm.y + aNorm.height > bNorm.y
+  )
+}
+
+export function findObjectsInRect(
+  rect: Rect,
+  objects: CanvasObject[]
+): CanvasObject[] {
+  return objects.filter((obj) => rectsIntersect(rect, getBoundingBox(obj)))
+}
