@@ -228,6 +228,7 @@ export function Canvas({ onExportRef }: CanvasProps) {
       let newY = box.y
       let newWidth = box.width
       let newHeight = box.height
+      const aspectRatio = box.width / box.height
 
       if (resizeHandle.includes('w')) {
         newWidth = box.x + box.width - point.x
@@ -242,6 +243,28 @@ export function Canvas({ onExportRef }: CanvasProps) {
       }
       if (resizeHandle.includes('s')) {
         newHeight = point.y - box.y
+      }
+
+      // Shift key: maintain aspect ratio for corner handles
+      if (e.shiftKey && resizeHandle.length === 2) {
+        const absWidth = Math.abs(newWidth)
+        const absHeight = Math.abs(newHeight)
+
+        if (absWidth / aspectRatio > absHeight) {
+          // Width is dominant, adjust height
+          const adjustedHeight = absWidth / aspectRatio * Math.sign(newHeight || 1)
+          if (resizeHandle.includes('n')) {
+            newY = box.y + box.height - Math.abs(adjustedHeight)
+          }
+          newHeight = adjustedHeight
+        } else {
+          // Height is dominant, adjust width
+          const adjustedWidth = absHeight * aspectRatio * Math.sign(newWidth || 1)
+          if (resizeHandle.includes('w')) {
+            newX = box.x + box.width - Math.abs(adjustedWidth)
+          }
+          newWidth = adjustedWidth
+        }
       }
 
       if (
