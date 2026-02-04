@@ -59,7 +59,7 @@ export function Canvas({ onExportRef }: CanvasProps) {
     ? objects.find((o) => o.id === selectedIds[0]) ?? null
     : null
 
-  // Resize canvas to fill container
+  // Resize canvas to fill container and re-render
   useEffect(() => {
     const resize = () => {
       const container = containerRef.current
@@ -72,6 +72,12 @@ export function Canvas({ onExportRef }: CanvasProps) {
       mainCanvas.height = height
       overlayCanvas.width = width
       overlayCanvas.height = height
+
+      // Re-render objects after resize (canvas clears when dimensions change)
+      const ctx = mainCanvas.getContext('2d')
+      if (ctx) {
+        renderAllObjects(ctx, paintStore.state.objects)
+      }
     }
 
     resize()
