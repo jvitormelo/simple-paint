@@ -9,6 +9,28 @@ import { Canvas } from './Canvas'
 // Internal clipboard for copied canvas objects
 let copiedObjects: CanvasObject[] = []
 
+function pasteImageFromBlob(blob: Blob): void {
+  const reader = new FileReader()
+  reader.onload = (e) => {
+    const imageData = e.target?.result as string
+    const img = new Image()
+    img.onload = () => {
+      const obj = createImage(
+        50,
+        50,
+        img.width,
+        img.height,
+        imageData,
+        paintStore.state.style
+      )
+      addObject(obj)
+      setSelection([obj.id])
+    }
+    img.src = imageData
+  }
+  reader.readAsDataURL(blob)
+}
+
 export function PaintApp() {
   const exportRef = useRef<(() => void) | null>(null)
 
@@ -21,67 +43,84 @@ export function PaintApp() {
       .map((obj) => ({ ...obj }))
   }, [])
 
-  const handlePaste = useCallback(async () => {
-    // First, check if we have copied canvas objects
-    if (copiedObjects.length > 0) {
-      const newIds: string[] = []
-      for (const obj of copiedObjects) {
-        const newObj = {
-          ...obj,
-          id: generateId(),
-          x: obj.x + 20,
-          y: obj.y + 20,
-        } as CanvasObject
-        addObject(newObj)
-        newIds.push(newObj.id)
-      }
-      // Update copied objects position for next paste
-      copiedObjects = copiedObjects.map((obj) => ({
+  // Paste internal copied objects only
+  const pasteInternalObjects = useCallback(() => {
+    if (copiedObjects.length === 0) return false
+
+    const newIds: string[] = []
+    for (const obj of copiedObjects) {
+      const newObj = {
         ...obj,
+        id: generateId(),
         x: obj.x + 20,
         y: obj.y + 20,
-      }))
-      setSelection(newIds)
-      return
+      } as CanvasObject
+      addObject(newObj)
+      newIds.push(newObj.id)
     }
+    // Update copied objects position for next paste
+    copiedObjects = copiedObjects.map((obj) => ({
+      ...obj,
+      x: obj.x + 20,
+      y: obj.y + 20,
+    }))
+    setSelection(newIds)
+    return true
+  }, [])
 
-    // Otherwise, try to paste from system clipboard
+  // Handle paste button click (fallback for when paste event isn't available)
+  const handlePasteButton = useCallback(async () => {
+    if (pasteInternalObjects()) return
+
+    // Try clipboard API (may not work in Firefox without permission)
     try {
       const items = await navigator.clipboard.read()
       for (const item of items) {
         const imageType = item.types.find((type) => type.startsWith('image/'))
         if (imageType) {
           const blob = await item.getType(imageType)
-          const reader = new FileReader()
-          reader.onload = (e) => {
-            const imageData = e.target?.result as string
-            const img = new Image()
-            img.onload = () => {
-              const obj = createImage(
-                50,
-                50,
-                img.width,
-                img.height,
-                imageData,
-                paintStore.state.style
-              )
-              addObject(obj)
-              setSelection([obj.id])
-            }
-            img.src = imageData
-          }
-          reader.readAsDataURL(blob)
-          break
+          pasteImageFromBlob(blob)
+          return
         }
       }
-    } catch (err) {
-      console.error('Failed to paste image:', err)
+    } catch {
+      // Clipboard API failed, prompt user to use Ctrl+V
+      alert('Please use Ctrl+V to paste images. Your browser requires keyboard paste for security.')
     }
-  }, [])
+  }, [pasteInternalObjects])
 
   const handleExport = useCallback(() => {
     exportRef.current?.()
   }, [])
+
+  // Handle paste event (works in Firefox and all browsers)
+  useEffect(() => {
+    const handlePasteEvent = (e: ClipboardEvent) => {
+      // First try internal clipboard
+      if (pasteInternalObjects()) {
+        e.preventDefault()
+        return
+      }
+
+      // Then try to get image from clipboard data
+      const items = e.clipboardData?.items
+      if (!items) return
+
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          e.preventDefault()
+          const blob = item.getAsFile()
+          if (blob) {
+            pasteImageFromBlob(blob)
+          }
+          return
+        }
+      }
+    }
+
+    document.addEventListener('paste', handlePasteEvent)
+    return () => document.removeEventListener('paste', handlePasteEvent)
+  }, [pasteInternalObjects])
 
   // Global keyboard shortcuts
   useEffect(() => {
@@ -102,9 +141,7 @@ export function PaintApp() {
         if (e.key === 'c') {
           handleCopy()
         }
-        if (e.key === 'v') {
-          handlePaste()
-        }
+        // Note: Ctrl+V is handled by paste event listener for better browser support
       }
 
       // Tool shortcuts
@@ -124,11 +161,11 @@ export function PaintApp() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [handleCopy, handlePaste])
+  }, [handleCopy])
 
   return (
     <div className="h-screen flex flex-col">
-      <Toolbar onPaste={handlePaste} onExport={handleExport} />
+      <Toolbar onPaste={handlePasteButton} onExport={handleExport} />
       <Canvas onExportRef={exportRef} />
     </div>
   )
