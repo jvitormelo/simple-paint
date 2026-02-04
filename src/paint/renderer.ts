@@ -1,4 +1,4 @@
-import type { CanvasObject, HandlePosition, Point } from './types'
+import type { CanvasObject } from './types'
 import { getBoundingBox, getHandlePositions } from './hit-testing'
 
 const HANDLE_SIZE = 8

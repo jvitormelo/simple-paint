@@ -18,7 +18,6 @@ import {
   createArrow,
   createFreehand,
   createText,
-  createImage,
 } from '../objects'
 import {
   findObjectAtPoint,

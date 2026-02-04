@@ -37,8 +37,6 @@ const tools: { type: ToolType; icon: React.ReactNode; label: string }[] = [
 export function Toolbar({ onPaste, onExport }: ToolbarProps) {
   const activeTool = useStore(paintStore, (s) => s.activeTool)
   const style = useStore(paintStore, (s) => s.style)
-  const canUndo = useStore(paintStore, (s) => s.history.length > 0)
-  const canRedo = useStore(paintStore, (s) => s.future.length > 0)
 
   return (
     <div className="flex items-center gap-4 p-2 bg-white border-b border-gray-200">

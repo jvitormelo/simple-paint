@@ -51,7 +51,7 @@ export function updateObject(id: string, updates: Partial<CanvasObject>): void {
   paintStore.setState((state) => ({
     ...state,
     objects: state.objects.map((obj) =>
-      obj.id === id ? { ...obj, ...updates } : obj
+      obj.id === id ? ({ ...obj, ...updates } as CanvasObject) : obj
     ),
   }))
 }
