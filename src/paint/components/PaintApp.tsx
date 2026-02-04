@@ -1,15 +1,51 @@
 import { useCallback, useEffect, useRef } from 'react'
 
-import { paintStore, addObject, setSelection, setTool, undo, redo } from '../store'
+import { paintStore, addObject, setSelection, setTool, undo, redo, generateId } from '../store'
 import { createImage } from '../objects'
-import type { ToolType } from '../types'
+import type { CanvasObject, ToolType } from '../types'
 import { Toolbar } from './Toolbar'
 import { Canvas } from './Canvas'
+
+// Internal clipboard for copied canvas objects
+let copiedObjects: CanvasObject[] = []
 
 export function PaintApp() {
   const exportRef = useRef<(() => void) | null>(null)
 
+  const handleCopy = useCallback(() => {
+    const { objects, selectedIds } = paintStore.state
+    if (selectedIds.length === 0) return
+
+    copiedObjects = objects
+      .filter((obj) => selectedIds.includes(obj.id))
+      .map((obj) => ({ ...obj }))
+  }, [])
+
   const handlePaste = useCallback(async () => {
+    // First, check if we have copied canvas objects
+    if (copiedObjects.length > 0) {
+      const newIds: string[] = []
+      for (const obj of copiedObjects) {
+        const newObj = {
+          ...obj,
+          id: generateId(),
+          x: obj.x + 20,
+          y: obj.y + 20,
+        } as CanvasObject
+        addObject(newObj)
+        newIds.push(newObj.id)
+      }
+      // Update copied objects position for next paste
+      copiedObjects = copiedObjects.map((obj) => ({
+        ...obj,
+        x: obj.x + 20,
+        y: obj.y + 20,
+      }))
+      setSelection(newIds)
+      return
+    }
+
+    // Otherwise, try to paste from system clipboard
     try {
       const items = await navigator.clipboard.read()
       for (const item of items) {
@@ -63,6 +99,9 @@ export function PaintApp() {
           e.preventDefault()
           redo()
         }
+        if (e.key === 'c') {
+          handleCopy()
+        }
         if (e.key === 'v') {
           handlePaste()
         }
@@ -85,7 +124,7 @@ export function PaintApp() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [handlePaste])
+  }, [handleCopy, handlePaste])
 
   return (
     <div className="h-screen flex flex-col">
